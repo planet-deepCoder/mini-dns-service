@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-display: Fraunces, Georgia, serif;
+  --color-paper: #ebe4d6;
+  --color-panel: #fffaf2;
+  --color-ink: #1b1713;
+  --color-muted: #6f675c;
+  --color-line: #e2d9c8;
+  --color-bookable: #1a6d45;
+  --color-bookable-bg: #d8f0e3;
+  --color-candidate: #c05621;
+  --color-candidate-bg: #f8e4d4;
+  --color-locked: #3f3a34;
+  --shadow-card: 0 18px 40px -28px rgb(28 23 18 / 0.45);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--color-ink);
+  background:
+    radial-gradient(circle at 10% -10%, #f7f1e6 0, transparent 38%),
+    var(--color-paper);
+  font-family: var(--font-sans);
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
