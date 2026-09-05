@@ -1,0 +1,790 @@
+{
+  "info": {
+    "_postman_id": "a7c3e8d1-4b2f-4e9a-9c11-mini-dns-service",
+    "name": "Mini DNS Service",
+    "description": "Import this collection in Postman to exercise every Mini DNS API.\n\n**Setup**\n1. Start the API: `cd backend && npm start` (default http://127.0.0.1:8000).\n2. File → Import → select this JSON.\n3. Confirm collection variable `baseUrl` (default `http://127.0.0.1:8000`).\n\n**Suggested run order:** Health → Add records → Resolve & list → Analytics → Validation & conflicts → Delete.\n\nThe store is in-memory. Restart the server (or run Add records first) if a create returns 409 from a previous run.\n\nUse **Run collection** to execute folders in order. Each request has a status-code test.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body status is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Liveness check. Does not touch DNS records."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Add records",
+      "item": [
+        {
+          "name": "Add A record — example.com → 192.168.1.1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('A record fields', () => {",
+                  "  pm.expect(body.hostname).to.eql('example.com');",
+                  "  pm.expect(body.type).to.eql('A');",
+                  "  pm.expect(body.value).to.eql('192.168.1.1');",
+                  "  pm.expect(body.createdAt).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"example.com\",\n  \"value\": \"192.168.1.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "`POST /api/dns` — create an IPv4 A record. Expected 201."
+          }
+        },
+        {
+          "name": "Add second A record — example.com → 192.168.1.2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Second A value', () => pm.expect(pm.response.json().value).to.eql('192.168.1.2'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"example.com\",\n  \"value\": \"192.168.1.2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "Multiple A records on one hostname are allowed (round-robin style). Expected 201."
+          }
+        },
+        {
+          "name": "Add CNAME — alias.example.com → example.com",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('CNAME target', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.type).to.eql('CNAME');",
+                  "  pm.expect(body.value).to.eql('example.com');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"CNAME\",\n  \"hostname\": \"alias.example.com\",\n  \"value\": \"example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "CNAME alias. Expected 201. A hostname may have only one CNAME and it cannot coexist with A records on the same name."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Resolve & list",
+      "item": [
+        {
+          "name": "Resolve example.com (A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('A record resolution', () => {",
+                  "  pm.expect(body.recordType).to.eql('A');",
+                  "  pm.expect(body.pointsTo).to.eql(null);",
+                  "  pm.expect(body.resolvedIps).to.have.members(['192.168.1.1', '192.168.1.2']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com",
+            "description": "`GET /api/dns/{hostname}` — returns all A IPs. Also enqueues a `query.log` job (non-blocking)."
+          }
+        },
+        {
+          "name": "Resolve alias.example.com (CNAME chain)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('CNAME resolution', () => {",
+                  "  pm.expect(body.recordType).to.eql('CNAME');",
+                  "  pm.expect(body.pointsTo).to.eql('example.com');",
+                  "  pm.expect(body.resolvedIps).to.have.members(['192.168.1.1', '192.168.1.2']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/alias.example.com",
+            "description": "`pointsTo` is the immediate CNAME target. `resolvedIps` follows the chain to A records."
+          }
+        },
+        {
+          "name": "List records for example.com",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Lists A records only at this hostname', () => {",
+                  "  pm.expect(body.hostname).to.eql('example.com');",
+                  "  pm.expect(body.records).to.have.lengthOf(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com/records",
+            "description": "`GET /api/dns/{hostname}/records` — records at that hostname only (does not follow CNAMEs)."
+          }
+        },
+        {
+          "name": "Resolve unknown hostname (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/missing.example.com",
+            "description": "Expected 404 `NOT_FOUND`. Still logged asynchronously for analytics."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Analytics",
+      "item": [
+        {
+          "name": "Get query logs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Includes queue stats', () => {",
+                  "  pm.expect(body.queue).to.have.keys('ready', 'enqueued', 'dequeued', 'dropped');",
+                  "});",
+                  "pm.test('Includes query array', () => pm.expect(body.queries).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/analytics/queries?limit=20",
+            "description": "`GET /api/analytics/queries` — recent DNS query logs plus live job-queue stats. Run a Resolve request first so logs have data. `limit` defaults to 100 (max 1000)."
+          }
+        },
+        {
+          "name": "Get query logs filtered by hostname",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/analytics/queries?hostname=example.com&limit=20",
+            "description": "Optional `hostname` filter (normalized, case-insensitive)."
+          }
+        },
+        {
+          "name": "Invalid analytics limit (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/analytics/queries?limit=0",
+            "description": "`limit` must be an integer from 1 to 1000. Expected 400."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Validation & conflicts",
+      "item": [
+        {
+          "name": "Invalid hostname (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"-bad.com\",\n  \"value\": \"192.168.1.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "Hostnames must follow RFC 1123. Leading hyphen is rejected. Expected 400."
+          }
+        },
+        {
+          "name": "Invalid IPv4 (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"example.com\",\n  \"value\": \"999.1.1.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "A-record values must be valid IPv4. Expected 400."
+          }
+        },
+        {
+          "name": "Missing body fields (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "`type`, `hostname`, and `value` are required. Expected 400."
+          }
+        },
+        {
+          "name": "Duplicate A record — first create (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"dup.example.com\",\n  \"value\": \"10.0.0.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "Seed record for the duplicate test. Uses a separate hostname so it does not collide with the happy path."
+          }
+        },
+        {
+          "name": "Duplicate A record (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('CONFLICT', () => pm.expect(pm.response.json().error).to.eql('CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"dup.example.com\",\n  \"value\": \"10.0.0.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "Same `(hostname, type, value)` is rejected. Expected 409 `CONFLICT`."
+          }
+        },
+        {
+          "name": "CNAME conflicts with existing A — seed A (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"A\",\n  \"hostname\": \"conflict.example.com\",\n  \"value\": \"10.1.1.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "Seed an A record, then the next request tries to add a CNAME on the same hostname."
+          }
+        },
+        {
+          "name": "CNAME conflicts with existing A (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('CONFLICT', () => pm.expect(pm.response.json().error).to.eql('CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"CNAME\",\n  \"hostname\": \"conflict.example.com\",\n  \"value\": \"other.example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "A CNAME cannot coexist with A records on the same hostname. Expected 409 `CONFLICT`."
+          }
+        },
+        {
+          "name": "Circular CNAME — seed a → b (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"CNAME\",\n  \"hostname\": \"a.cycle.test\",\n  \"value\": \"b.cycle.test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "First half of a CNAME cycle."
+          }
+        },
+        {
+          "name": "Circular CNAME — b → a (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('CNAME_CYCLE', () => pm.expect(pm.response.json().error).to.eql('CNAME_CYCLE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"CNAME\",\n  \"hostname\": \"b.cycle.test\",\n  \"value\": \"a.cycle.test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/dns",
+            "description": "Closing the loop is rejected. Expected 409 `CNAME_CYCLE`."
+          }
+        },
+        {
+          "name": "Delete missing type and value (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com",
+            "description": "`type` and `value` query parameters are required. Expected 400."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Delete",
+      "item": [
+        {
+          "name": "Delete A record — example.com 192.168.1.1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Delete confirmation', () => {",
+                  "  pm.expect(body.message).to.eql('DNS record deleted.');",
+                  "  pm.expect(body.hostname).to.eql('example.com');",
+                  "  pm.expect(body.value).to.eql('192.168.1.1');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com?type=A&value=192.168.1.1",
+            "description": "`DELETE /api/dns/{hostname}?type=A&value=...` — removes one specific record. Expected 200. Run after Add records."
+          }
+        },
+        {
+          "name": "Resolve example.com after deleting one A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Only the remaining IP', () => {",
+                  "  pm.expect(pm.response.json().resolvedIps).to.eql(['192.168.1.2']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com",
+            "description": "The other A record should still resolve."
+          }
+        },
+        {
+          "name": "Delete remaining A record — example.com 192.168.1.2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com?type=A&value=192.168.1.2",
+            "description": "Removes the last A record for example.com."
+          }
+        },
+        {
+          "name": "Resolve example.com after all A records deleted (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com",
+            "description": "Expected 404 once no live records remain."
+          }
+        },
+        {
+          "name": "Delete missing record (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/dns/example.com?type=A&value=192.168.1.1",
+            "description": "Deleting a record that is already gone returns 404."
+          }
+        }
+      ]
+    }
+  ]
+}
